@@ -1,58 +1,139 @@
-from flask import Flask
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Dict, Optional, Any
 from app.config.settings import config
-from app.api.middleware.cors import init_cors, add_security_headers
-from app.api.routes.agent_routes import api_bp
-from app.api.routes.tool_routes import tools_bp
-from app.mcp.transport.http_transport import mcp_bp
-from app.utils.logger import logger
+from app.agents.services.agent_service import get_agent_service
+import asyncio
 
 
-def create_app():
-    """Create and configure the Flask application"""
-    app = Flask(__name__)
+# Define Pydantic models for request/response
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict[str, str]]] = []
 
-    # Initialize CORS
-    init_cors(app)
 
-    # Add security headers
-    add_security_headers(app)
+class ChatResponse(BaseModel):
+    success: bool
+    response: str
+    message: str
 
-    # Register blueprints
-    app.register_blueprint(api_bp)
-    app.register_blueprint(tools_bp)
-    app.register_blueprint(mcp_bp)
 
-    # Health check endpoint
-    @app.route('/health')
-    def health():
-        return {'status': 'healthy', 'service': 'THz Agent'}
+class SessionResponse(BaseModel):
+    success: bool
+    session_id: str
 
-    # Root endpoint
-    @app.route('/')
-    def index():
-        return {
-            'message': 'THz Agent API',
-            'version': '1.0.0',
-            'endpoints': {
-                'chat': '/api/v1/agent/chat',
-                'tools': '/api/v1/tools/list',
-                'mcp': '/mcp/v1/call'
-            }
+
+class ToolsResponse(BaseModel):
+    success: bool
+    tools: List[Dict[str, Any]]
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+
+
+class IndexResponse(BaseModel):
+    message: str
+    version: str
+    endpoints: Dict[str, str]
+
+
+# Create FastAPI app
+app = FastAPI(title="THz Agent API", version="1.0.0")
+
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure as needed for security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.post("/api/v1/agent/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """Endpoint for chat interaction with the agent"""
+    try:
+        # Validate history format if provided
+        if request.history:
+            for msg in request.history:
+                if not isinstance(msg, dict) or 'role' not in msg or 'content' not in msg:
+                    raise HTTPException(status_code=400,
+                                      detail='Each message in history must have role and content fields')
+
+        # Process the message
+        agent_service = get_agent_service()
+        response = await agent_service.process_message_async(request.message, request.history)
+
+        return ChatResponse(
+            success=True,
+            response=response,
+            message=request.message
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'An error occurred: {str(e)}')
+
+
+@app.post("/api/v1/sessions/create", response_model=SessionResponse)
+async def create_session():
+    """Endpoint to create a new conversation session"""
+    try:
+        import uuid
+        session_id = 'session_' + str(uuid.uuid4())
+        return SessionResponse(success=True, session_id=session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'An error occurred: {str(e)}')
+
+
+@app.get("/api/v1/tools/list", response_model=ToolsResponse)
+async def list_tools():
+    """Endpoint to list available tools"""
+    try:
+        agent_service = get_agent_service()
+        tools = agent_service.get_available_tools()
+        return ToolsResponse(success=True, tools=tools)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'An error occurred: {str(e)}')
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health():
+    """Health check endpoint"""
+    return HealthResponse(status="healthy", service="THz Agent")
+
+
+@app.get("/", response_model=IndexResponse)
+async def index():
+    """Root endpoint"""
+    return IndexResponse(
+        message="THz Agent API",
+        version="1.0.0",
+        endpoints={
+            "chat": "/api/v1/agent/chat",
+            "tools": "/api/v1/tools/list",
+            "mcp": "/mcp/v1/call"  # Keep MCP endpoint reference
         }
-
-    return app
+    )
 
 
 def main():
     """Main entry point for the application"""
-    app = create_app()
+    import uvicorn
 
-    logger.info(f"Starting THz Agent API on {config.server.host}:{config.server.port}")
+    print(f"Starting THz Agent API on {config.server.host}:{config.server.port}")
 
-    app.run(
+    uvicorn.run(
+        app,
         host=config.server.host,
         port=config.server.port,
-        debug=config.server.debug
+        reload=config.server.debug
     )
 
 

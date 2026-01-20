@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -27,6 +27,24 @@ class WebConfig(BaseModel):
     max_results: int = Field(default=5, description="Maximum number of search results")
 
 
+class MCPServerConfig(BaseModel):
+    """Configuration for MCP server connection"""
+    name: str = Field(description="Name of the MCP server (e.g., 'laser_server')")
+    transport_type: str = Field(default="stdio", description="Transport type: 'stdio' or 'sse'")
+    command: Optional[str] = Field(default=None, description="Command to start the server (for stdio)")
+    url: Optional[str] = Field(default=None, description="URL for the server (for sse or http)")
+
+    class Config:
+        # Allow extra fields for flexibility
+        extra = "allow"
+
+
+class MCPConfig(BaseModel):
+    """Configuration for MCP connections"""
+    enabled: bool = Field(default=True, description="Enable MCP functionality")
+    servers: List[MCPServerConfig] = Field(default=[], description="List of MCP server configurations")
+
+
 class ServerConfig(BaseModel):
     """Configuration for the HTTP API server"""
     host: str = Field(default="0.0.0.0", description="Server host")
@@ -39,11 +57,25 @@ class Config(BaseModel):
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
     web: WebConfig = WebConfig()
+    mcp: MCPConfig = MCPConfig()
     server: ServerConfig = ServerConfig()
 
     @classmethod
     def from_env(cls) -> 'Config':
         """Load configuration from environment variables"""
+        # Load MCP servers from environment - allowing JSON format
+        import json
+        mcp_servers_json = os.getenv('MCP_SERVERS', '[]')
+        mcp_servers = []
+        try:
+            if mcp_servers_json.strip():
+                servers_data = json.loads(mcp_servers_json)
+                for server_data in servers_data:
+                    mcp_servers.append(MCPServerConfig(**server_data))
+        except (json.JSONDecodeError, TypeError):
+            # If JSON parsing fails, continue with empty list
+            pass
+
         return cls(
             llm=LLMConfig(
                 model=os.getenv('LLM_MODEL', 'qwen3-8b-finetuned'),
@@ -63,6 +95,10 @@ class Config(BaseModel):
                 search_enabled=os.getenv('WEB_SEARCH_ENABLED', 'true').lower() == 'true',
                 max_results=int(os.getenv('MAX_SEARCH_RESULTS', '5'))
             ),
+            mcp=MCPConfig(
+                enabled=os.getenv('MCP_ENABLED', 'true').lower() == 'true',
+                servers=mcp_servers
+            ),
             server=ServerConfig(
                 host=os.getenv('SERVER_HOST', '0.0.0.0'),
                 port=int(os.getenv('SERVER_PORT', '8000')),
@@ -80,6 +116,18 @@ class Config(BaseModel):
 
         if self.web.max_results <= 0:
             raise ValueError("Max search results must be positive")
+
+        # Validate MCP configuration
+        if self.mcp.enabled:
+            for server in self.mcp.servers:
+                if not server.name:
+                    raise ValueError("MCP server name is required")
+                if server.transport_type not in ['stdio', 'sse', 'http']:
+                    raise ValueError(f"Invalid MCP transport type: {server.transport_type}")
+                if server.transport_type == 'stdio' and not server.command:
+                    raise ValueError(f"MCP server {server.name} requires a command for stdio transport")
+                if server.transport_type in ['sse', 'http'] and not server.url:
+                    raise ValueError(f"MCP server {server.name} requires a URL for {server.transport_type} transport")
 
 
 # Global config instance

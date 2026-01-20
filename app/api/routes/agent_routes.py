@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app.agents.services.agent_service import get_agent_service
 from typing import Dict, Any, List
+import asyncio
 
 
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
@@ -30,7 +31,23 @@ def chat():
 
         # Process the message
         agent_service = get_agent_service()
-        response = agent_service.process_message(message, history)
+
+        # Handle the async nature of the agent service
+        try:
+            # Try to get running loop
+            loop = asyncio.get_running_loop()
+            # If already in a loop, use run_in_executor
+            import concurrent.futures
+
+            def run_sync_chat():
+                return agent_service.process_message(message, history)
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_sync_chat)
+                response = future.result()
+        except RuntimeError:
+            # No event loop running, safe to call directly
+            response = agent_service.process_message(message, history)
 
         return jsonify({
             'success': True,
