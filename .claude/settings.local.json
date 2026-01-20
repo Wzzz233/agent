@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "WebSearch",
+      "Bash(for:*)",
+      "Bash(do touch $dir/__init__.py)",
+      "Bash(done)",
+      "Bash(start /b python -m app.main:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}
