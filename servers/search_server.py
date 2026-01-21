@@ -92,14 +92,18 @@ async def web_search(query: str, max_results: int = 5) -> str:
 
 async def main():
     """Main entry point for the search server."""
+    from mcp.server.stdio import stdio_server
+    
     logger.info("Starting MCP Web Search Server...")
 
-    # Run the server
-    async with server.run():
+    # Run with stdio transport - proper async iteration
+    async with stdio_server() as (read_stream, write_stream):
         logger.info("Search server running, waiting for connections...")
-        # Keep the server running indefinitely
-        while True:
-            await asyncio.sleep(1)
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
 
 
 if __name__ == "__main__":
