@@ -8,7 +8,9 @@
       "Bash(do touch $dir/__init__.py)",
       "Bash(done)",
       "Bash(start /b python -m app.main:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(dir:*)",
+      "Bash(tree:*)"
     ]
   }
 }
