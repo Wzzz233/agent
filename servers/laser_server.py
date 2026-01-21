@@ -1,165 +1,91 @@
-"""Temporary MCP server for laser control - for local testing."""
+"""MCP Server for laser control - Standard implementation."""
 import asyncio
 import json
 import sys
-from typing import Dict, Any, Callable, List
+import logging
+from typing import Dict, Any
+from mcp.server import Server
+from mcp.types import Tool, StaticResource, ToolResult
+import argparse
 
 
-class MockLaserControl:
-    """Original laser control implementation to reuse."""
+# Set up logging to stderr to avoid interfering with MCP protocol
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logger = logging.getLogger(__name__)
 
-    @staticmethod
-    def execute_command(params: str) -> str:
-        """Execute the laser control command"""
-        try:
-            args = json.loads(params)
-        except json.JSONDecodeError:
-            return "参数格式错误，请使用 JSON"
+# Create MCP server instance
+server = Server("laser-control-server")
 
-        cmd = args.get('command')
-        if cmd == 'on':
+
+class LaserController:
+    """Laser controller implementing the actual business logic."""
+
+    def __init__(self):
+        self._is_on = False
+        self._power_level = 0
+
+    def execute_command(self, params: Dict[str, Any]) -> str:
+        """Execute the laser control command."""
+        command = params.get('command', '')
+
+        if command == 'on':
+            self._is_on = True
             return "【硬件反馈】激光器已开启，预热中..."
-        elif cmd == 'off':
+        elif command == 'off':
+            self._is_on = False
             return "【硬件反馈】激光器已关闭"
-        elif cmd == 'set_power':
-            val = args.get('value', 0)
-            return f"【硬件反馈】功率已调节至 {val} mW"
+        elif command == 'set_power':
+            value = params.get('value', 0)
+            self._power_level = value
+            return f"【硬件反馈】功率已调节至 {value} mW"
         else:
             return "【硬件反馈】指令无效"
 
 
-# MCP protocol constants
-MCP_PROTOCOL_VERSION = "2024-11-05"
-PROTOCOL_HEADER = f"MCP {MCP_PROTOCOL_VERSION}"
+laser_controller = LaserController()
 
 
-class MCPLaserServer:
-    """Simple MCP server implementation for laser control."""
+@server.tool(
+    "mock_laser_control",
+    "控制飞秒激光器的开关和功率",
+    # Define input schema with proper types and descriptions
+)
+async def mock_laser_control(command: str, value: int = None) -> str:
+    """
+    控制飞秒激光器的开关和功率
 
-    def __init__(self):
-        self.running = True
+    Args:
+        command: 指令内容，只能是 'on', 'off' 或 'set_power'
+        value: 当指令为 'set_power' 时，设置的具体功率值(mW)
+    """
+    params = {"command": command}
+    if value is not None:
+        params["value"] = value
 
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle incoming MCP request."""
-        method = request.get("method", "")
+    logger.info(f"Executing laser command: {params}")
 
-        if method == "tools/list":
-            return self._handle_list_tools(request.get("id"))
-        elif method == "tools/call":
-            return await self._handle_call_tool(request)
-        else:
-            return {
-                "error": {
-                    "code": 400,
-                    "message": f"Unknown method: {method}"
-                },
-                "id": request.get("id")
-            }
-
-    def _handle_list_tools(self, req_id: str) -> Dict[str, Any]:
-        """Handle list tools request."""
-        tools = [{
-            "name": "mock_laser_control",
-            "description": "控制飞秒激光器的开关和功率",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "指令内容，只能是 'on', 'off' 或 'set_power'",
-                        "enum": ["on", "off", "set_power"]
-                    },
-                    "value": {
-                        "type": "integer",
-                        "description": "当指令为 'set_power' 时，设置的具体功率值(mW)",
-                    }
-                },
-                "required": ["command"]
-            }
-        }]
-
-        return {
-            "result": {"tools": tools},
-            "id": req_id
-        }
-
-    async def _handle_call_tool(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle tool call request."""
-        params = request.get("params", {})
-        tool_name = params.get("name", "")
-        arguments = params.get("arguments", {})
-
-        if tool_name == "mock_laser_control":
-            # Convert arguments to JSON string to match original interface
-            args_json = json.dumps(arguments)
-            result = MockLaserControl.execute_command(args_json)
-
-            return {
-                "result": {"content": result},
-                "id": request.get("id")
-            }
-        else:
-            return {
-                "error": {
-                    "code": 404,
-                    "message": f"Tool '{tool_name}' not found"
-                },
-                "id": request.get("id")
-            }
-
-    async def run(self):
-        """Run the MCP server."""
-        print(f"{PROTOCOL_HEADER}", file=sys.stderr)
-        print(f"Content-Type: application/json", file=sys.stderr)
-        print(file=sys.stderr)  # Empty line signals end of headers
-
-        sys.stderr.flush()
-
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
-
-        while self.running:
-            try:
-                # Read length header
-                line = await reader.readline()
-                if not line:
-                    break
-
-                line = line.decode().strip()
-                if line.startswith("Content-Length:"):
-                    length = int(line.split(":")[1].strip())
-
-                    # Read empty line
-                    await reader.readline()
-
-                    # Read JSON body
-                    data = await reader.readexactly(length)
-                    request = json.loads(data.decode())
-
-                    # Process request
-                    response = await self.handle_request(request)
-
-                    # Send response
-                    response_json = json.dumps(response, ensure_ascii=False)
-                    response_bytes = response_json.encode()
-
-                    print(f"Content-Length: {len(response_bytes)}", file=sys.stdout)
-                    print(file=sys.stdout)  # Empty line
-                    sys.stdout.buffer.write(response_bytes)
-                    sys.stdout.flush()
-
-            except Exception as e:
-                print(f"Error in MCP server: {e}", file=sys.stderr)
-                break
+    try:
+        result = laser_controller.execute_command(params)
+        logger.info(f"Laser command result: {result}")
+        return result
+    except Exception as e:
+        error_msg = f"Error executing laser command: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 
 
 async def main():
     """Main entry point for the laser server."""
-    server = MCPLaserServer()
-    print("Starting MCP Laser Control Server...", file=sys.stderr)
-    await server.run()
+    logger.info("Starting MCP Laser Control Server...")
+
+    # Run the server
+    async with server.run():
+        logger.info("Laser server running, waiting for connections...")
+        # Keep the server running indefinitely
+        while True:
+            await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
+    # Use asyncio.run to run the main function
     asyncio.run(main())

@@ -1,176 +1,107 @@
-"""Temporary MCP server for web search - for local testing."""
+"""MCP Server for web search - Standard implementation."""
 import asyncio
 import json
 import sys
+import logging
 from typing import Dict, Any
+from mcp.server import Server
+from mcp.types import Tool, StaticResource, ToolResult
+import argparse
 
 
-class WebSearchTool:
-    """Original web search implementation to reuse."""
+# Set up logging to stderr to avoid interfering with MCP protocol
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logger = logging.getLogger(__name__)
 
-    @staticmethod
-    def execute_search(params: str) -> str:
-        """Execute the web search"""
-        try:
-            args = json.loads(params)
-        except json.JSONDecodeError:
-            return "[ERROR] Invalid JSON format in parameters."
+# Create MCP server instance
+server = Server("internet-search-gateway")
 
-        query = args.get('query', '').strip()
+
+class WebSearchController:
+    """Web search controller implementing the actual business logic."""
+
+    def __init__(self):
+        self.max_results = 5
+
+    def execute_search(self, params: Dict[str, Any]) -> str:
+        """Execute the web search."""
+        query = params.get('query', '').strip()
+
         if not query:
             return "[ERROR] Search query cannot be empty."
 
-        # Simulate search functionality
-        # In a real implementation, we would use actual search libraries
-        results = [
-            {"title": f"Result 1 for {query}", "href": "http://example.com/1", "body": f"This is a sample result for {query}"},
-            {"title": f"Result 2 for {query}", "href": "http://example.com/2", "body": f"Another sample result discussing {query}"}
-        ]
+        try:
+            # Simulate search functionality
+            # In a real implementation, we would use actual search libraries
+            results = [
+                {"title": f"Result 1 for {query}", "href": "http://example.com/1", "body": f"This is a sample result for {query}"},
+                {"title": f"Result 2 for {query}", "href": "http://example.com/2", "body": f"Another sample result discussing {query}"}
+            ]
 
-        # Format search results
-        result_parts = [f"[SEARCH RESULTS] Query: '{query}'\n"]
-        result_parts.append("Search Results:")
-        result_parts.append("=" * 60)
+            # Format search results
+            result_parts = [f"[SEARCH RESULTS] Query: '{query}'\n"]
+            result_parts.append("Search Results:")
+            result_parts.append("=" * 60)
 
-        for i, r in enumerate(results, 1):
-            result_parts.append(f"\n{i}. {r.get('title', 'No title')}")
-            result_parts.append(f"   URL: {r.get('href', 'No URL')}")
-            result_parts.append(f"   {r.get('body', 'No description')[:200]}...")
+            for i, r in enumerate(results, 1):
+                result_parts.append(f"\n{i}. {r.get('title', 'No title')}")
+                result_parts.append(f"   URL: {r.get('href', 'No URL')}")
+                result_parts.append(f"   {r.get('body', 'No description')[:200]}...")
 
-        result_parts.append("\n" + "=" * 60)
-        result_parts.append("[NOTE] Please use the above information to answer the user's question.")
+            result_parts.append("\n" + "=" * 60)
+            result_parts.append("[NOTE] Please use the above information to answer the user's question.")
 
-        formatted_result = "\n".join(result_parts)
-        return formatted_result
+            formatted_result = "\n".join(result_parts)
+            return formatted_result
 
-
-# MCP protocol constants
-MCP_PROTOCOL_VERSION = "2024-11-05"
-PROTOCOL_HEADER = f"MCP {MCP_PROTOCOL_VERSION}"
+        except Exception as e:
+            return f"[SEARCH FAILED] Error occurred: {str(e)}"
 
 
-class MCPSearchServer:
-    """Simple MCP server implementation for web search."""
+search_controller = WebSearchController()
 
-    def __init__(self):
-        self.running = True
 
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle incoming MCP request."""
-        method = request.get("method", "")
+@server.tool(
+    "web_search",
+    "Search information on the internet using DuckDuckGo. Use English keywords for better results. Returns search results with titles, URLs, and snippets."
+)
+async def web_search(query: str, max_results: int = 5) -> str:
+    """
+    Search information on the internet using DuckDuckGo.
 
-        if method == "tools/list":
-            return self._handle_list_tools(request.get("id"))
-        elif method == "tools/call":
-            return await self._handle_call_tool(request)
-        else:
-            return {
-                "error": {
-                    "code": 400,
-                    "message": f"Unknown method: {method}"
-                },
-                "id": request.get("id")
-            }
+    Args:
+        query: Search keywords in ENGLISH (e.g., 'terahertz spectroscopy advances 2024')
+        max_results: Maximum number of results to return (default: 5)
+    """
+    params = {
+        "query": query,
+        "max_results": max_results
+    }
 
-    def _handle_list_tools(self, req_id: str) -> Dict[str, Any]:
-        """Handle list tools request."""
-        tools = [{
-            "name": "web_search",
-            "description": "Search information on the internet using DuckDuckGo. Use English keywords for better results. Returns search results with titles, URLs, and snippets.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search keywords in ENGLISH (e.g., 'terahertz spectroscopy advances 2024')"
-                    }
-                },
-                "required": ["query"]
-            }
-        }]
+    logger.info(f"Executing web search: {params}")
 
-        return {
-            "result": {"tools": tools},
-            "id": req_id
-        }
-
-    async def _handle_call_tool(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle tool call request."""
-        params = request.get("params", {})
-        tool_name = params.get("name", "")
-        arguments = params.get("arguments", {})
-
-        if tool_name == "web_search":
-            # Convert arguments to JSON string to match original interface
-            args_json = json.dumps(arguments)
-            result = WebSearchTool.execute_search(args_json)
-
-            return {
-                "result": {"content": result},
-                "id": request.get("id")
-            }
-        else:
-            return {
-                "error": {
-                    "code": 404,
-                    "message": f"Tool '{tool_name}' not found"
-                },
-                "id": request.get("id")
-            }
-
-    async def run(self):
-        """Run the MCP server."""
-        print(f"{PROTOCOL_HEADER}", file=sys.stderr)
-        print(f"Content-Type: application/json", file=sys.stderr)
-        print(file=sys.stderr)  # Empty line signals end of headers
-
-        sys.stderr.flush()
-
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
-
-        while self.running:
-            try:
-                # Read length header
-                line = await reader.readline()
-                if not line:
-                    break
-
-                line = line.decode().strip()
-                if line.startswith("Content-Length:"):
-                    length = int(line.split(":")[1].strip())
-
-                    # Read empty line
-                    await reader.readline()
-
-                    # Read JSON body
-                    data = await reader.readexactly(length)
-                    request = json.loads(data.decode())
-
-                    # Process request
-                    response = await self.handle_request(request)
-
-                    # Send response
-                    response_json = json.dumps(response, ensure_ascii=False)
-                    response_bytes = response_json.encode()
-
-                    print(f"Content-Length: {len(response_bytes)}", file=sys.stdout)
-                    print(file=sys.stdout)  # Empty line
-                    sys.stdout.buffer.write(response_bytes)
-                    sys.stdout.flush()
-
-            except Exception as e:
-                print(f"Error in MCP server: {e}", file=sys.stderr)
-                break
+    try:
+        result = search_controller.execute_search(params)
+        logger.info(f"Web search completed with {len(result)} chars result")
+        return result
+    except Exception as e:
+        error_msg = f"[SEARCH FAILED] Error occurred: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 
 
 async def main():
     """Main entry point for the search server."""
-    server = MCPSearchServer()
-    print("Starting MCP Web Search Server...", file=sys.stderr)
-    await server.run()
+    logger.info("Starting MCP Web Search Server...")
+
+    # Run the server
+    async with server.run():
+        logger.info("Search server running, waiting for connections...")
+        # Keep the server running indefinitely
+        while True:
+            await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
+    # Use asyncio.run to run the main function
     asyncio.run(main())

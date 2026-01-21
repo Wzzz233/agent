@@ -1,0 +1,4 @@
+# Server-specific dependencies
+mcp>=1.0.0
+duckduckgo-search>=3.8.4
+ddgs>=0.1.8

@@ -32,6 +32,7 @@ class MCPServerConfig(BaseModel):
     name: str = Field(description="Name of the MCP server (e.g., 'laser_server')")
     transport_type: str = Field(default="stdio", description="Transport type: 'stdio' or 'sse'")
     command: Optional[str] = Field(default=None, description="Command to start the server (for stdio)")
+    args: Optional[List[str]] = Field(default=None, description="Arguments for the command (for stdio)")
     url: Optional[str] = Field(default=None, description="URL for the server (for sse or http)")
 
     class Config:

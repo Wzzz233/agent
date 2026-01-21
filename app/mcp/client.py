@@ -32,7 +32,11 @@ class MCPClientManager:
                 if server_config.transport_type == "stdio":
                     # Start the MCP server as a subprocess
                     if server_config.command:
-                        cmd_parts = server_config.command.split()
+                        # Build the command with arguments
+                        cmd_parts = [server_config.command]
+                        if server_config.args:
+                            cmd_parts.extend(server_config.args)
+
                         process = subprocess.Popen(
                             cmd_parts,
                             stdin=subprocess.PIPE,
@@ -104,7 +108,7 @@ class MCPClientManager:
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Call a specific tool by name, routing to the appropriate server."""
         if tool_name not in self.tool_to_server_map:
-            raise ValueError(f"Tool '{tool_name}' not found among registered tools")
+            raise ValueError(f"Tool '{tool_name}' not found among registered files")
 
         server_name = self.tool_to_server_map[tool_name]
         server_info = self.sessions[server_name]
