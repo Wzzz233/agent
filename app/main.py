@@ -10,7 +10,7 @@ import asyncio
 # Define Pydantic models for request/response
 class ChatRequest(BaseModel):
     message: str
-    history: Optional[List[Dict[str, str]]] = []
+    history: Optional[List[Dict[str, Any]]] = []
 
 
 class ChatResponse(BaseModel):

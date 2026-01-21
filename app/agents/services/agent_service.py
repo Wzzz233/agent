@@ -64,7 +64,7 @@ class AgentService:
             system_message=config.agent.system_message
         )
 
-    async def process_message_async(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+    async def process_message_async(self, message: str, history: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Process a message asynchronously and return the agent's response
 
@@ -91,7 +91,7 @@ class AgentService:
         else:
             return "无法生成响应，请重试。"
 
-    def process_message(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+    def process_message(self, message: str, history: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Process a message and return the agent's response
 
