@@ -1,0 +1,18 @@
+# Local Control MCP Server Dependencies
+# 安装命令: pip install -r local_server_requirements.txt
+
+# MCP Protocol
+mcp>=1.0.0
+
+# Screen Control
+pyautogui>=0.9.54
+
+# Image Processing
+Pillow>=10.0.0
+
+# System Information
+psutil>=5.9.0
+
+# Future: Instrument Control (VISA)
+# pyvisa>=1.14.0
+# pyvisa-py>=0.7.0

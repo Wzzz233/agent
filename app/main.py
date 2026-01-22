@@ -13,10 +13,12 @@ class ChatRequest(BaseModel):
     history: Optional[List[Dict[str, Any]]] = []
 
 
+
 class ChatResponse(BaseModel):
     success: bool
     response: str
     message: str
+    thoughts: Optional[List[Dict[str, Any]]] = []
 
 
 class SessionResponse(BaseModel):
@@ -67,12 +69,13 @@ async def chat(request: ChatRequest):
 
         # Process the message
         agent_service = get_agent_service()
-        response = await agent_service.process_message_async(request.message, request.history)
-
+        result = await agent_service.process_message_async(request.message, request.history)
+        
         return ChatResponse(
             success=True,
-            response=response,
-            message=request.message
+            response=result["response"],
+            message=request.message,
+            thoughts=result["thoughts"]
         )
 
     except HTTPException:

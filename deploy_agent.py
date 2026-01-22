@@ -22,7 +22,7 @@ image = (
         "python-dateutil>=2.8.0"
     )
     .add_local_dir("app", remote_path="/root/app")
-    .add_local_dir("servers", remote_path="/root/servers")
+    .add_local_dir("servers_cloud", remote_path="/root/servers")
 )
 
 @app.function(
@@ -46,7 +46,7 @@ def fastapi_app():
         "name": "search",
         "transport_type": "stdio",
         "command": "python",
-        "args": ["/root/servers/search_server.py"]
+        "args": ["/root/servers/search.py"]
     })
 
     # Add laser server configuration (using HTTP/SSE if NGROK_URL is provided via secrets)
@@ -72,6 +72,15 @@ def fastapi_app():
     os.environ['MCP_ENABLED'] = 'true'
 
     print(f"MCP Configuration: {os.environ['MCP_SERVERS']}")
+    
+    # Debug: Print LLM configuration (loaded from Modal Secrets)
+    llm_model = os.environ.get('LLM_MODEL', 'NOT_SET')
+    llm_server = os.environ.get('LLM_MODEL_SERVER', 'NOT_SET')
+    llm_api_key = os.environ.get('LLM_API_KEY', 'NOT_SET')
+    print(f"LLM Configuration:")
+    print(f"  LLM_MODEL: {llm_model}")
+    print(f"  LLM_MODEL_SERVER: {llm_server}")
+    print(f"  LLM_API_KEY: {llm_api_key[:20]}..." if llm_api_key != 'NOT_SET' else "  LLM_API_KEY: NOT_SET")
 
     # Import and return the FastAPI app after setting up environment
     # This ensures the configuration is loaded with the proper MCP settings
@@ -82,5 +91,8 @@ def fastapi_app():
     import app.config.settings as settings_module
     settings_module.config = Config.from_env()
     settings_module.config.validate()
+    
+    # Debug: Confirm config loaded correctly
+    print(f"Config loaded - LLM Server: {settings_module.config.llm.model_server}")
 
     return app
