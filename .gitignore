@@ -1,0 +1,33 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Agent-specific cache
+.agent/
+.qwen/
+
+# ADS simulation files
+*.cfg
+*.log
+
+# Pending operations (runtime state)
+servers_local/.pending_operations.json
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

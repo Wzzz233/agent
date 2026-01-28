@@ -10,7 +10,9 @@
       "Bash(start /b python -m app.main:*)",
       "Bash(curl:*)",
       "Bash(dir:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "Read(//c/Users/Wzzz2/OneDrive/Desktop/agent/**)"
     ]
   }
 }

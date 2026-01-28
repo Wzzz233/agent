@@ -12,7 +12,6 @@ import subprocess
 import sys
 import signal
 import time
-from app.main import main as run_main_app
 
 
 def setup_environment():
@@ -20,18 +19,13 @@ def setup_environment():
     print("Setting up MCP server configuration...")
 
     # Define MCP server configuration
+    # Define MCP server configuration
     mcp_servers_config = [
         {
-            "name": "laser_server",
+            "name": "ads2025_server",
             "transport_type": "stdio",
             "command": "python",
-            "args": ["servers/laser_server.py"]
-        },
-        {
-            "name": "search_server",
-            "transport_type": "stdio",
-            "command": "python",
-            "args": ["servers/search_server.py"]
+            "args": ["servers_local\\ads_server.py"]
         }
     ]
 
@@ -45,21 +39,22 @@ def setup_environment():
 
 def main():
     """Main startup function."""
-    print("🚀 Starting THz Agent with MCP Server Integration...")
+    print("Starting THz Agent with MCP Server Integration...")
     print("-" * 50)
 
     # Set up environment
     setup_environment()
 
-    print("\n📋 MCP Configuration:")
+    print("\nMCP Configuration:")
     print(f"  MCP Enabled: {os.environ.get('MCP_ENABLED', 'false')}")
     print(f"  MCP Servers: {os.environ.get('MCP_SERVERS', '[]')}")
 
-    print("\n✅ Starting main application...")
+    print("\nStarting main application...")
     print("-" * 50)
 
     try:
         # Run the main application
+        from app.main import main as run_main_app
         run_main_app()
     except KeyboardInterrupt:
         print("\n\n🛑 Received interrupt signal. Shutting down...")
