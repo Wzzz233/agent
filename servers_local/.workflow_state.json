@@ -1,0 +1,12 @@
+{
+  "state": "COMPONENT_ADDING",
+  "plan_id": null,
+  "plan_data": null,
+  "design_uri": "MyLibrary3_lib:test_user5:schematic",
+  "library_name": "MyLibrary3_lib",
+  "cell_name": "test_user5",
+  "components_added": 3,
+  "total_components": 0,
+  "last_updated": "2026-01-31T20:19:23.095282",
+  "error_message": null
+}

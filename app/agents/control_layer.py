@@ -94,21 +94,30 @@ class ControlLayer:
         Returns:
             (should_terminate, reason, message)
         """
-        # Check 1: Termination action
+        # First check if the result indicates an error/failure
+        is_success = self._is_successful_result(tool_result)
+        is_error = self._is_error_result(tool_result)
+        
+        # If tool returned an error, don't trigger any termination conditions
+        # Let the LLM handle the error and try another approach
+        if is_error:
+            return False, None, ""
+        
+        # Check 1: Termination action (only if successful)
         if tool_name in self.config.TERMINATION_ACTIONS:
-            # Only terminate if successful
-            if self._is_successful_result(tool_result):
+            if is_success:
                 return True, TerminationReason.TERMINATION_ACTION_CALLED, (
                     f"✓ Task completed by '{tool_name}'. "
                     f"Execution stopped to prevent redundant actions."
                 )
 
-        # Check 2: User confirmation required
+        # Check 2: User confirmation required (only if successful)
         if tool_name in self.config.CONFIRMATION_REQUIRED_ACTIONS:
-            return True, TerminationReason.USER_CONFIRMATION_REQUIRED, (
-                f"⏸️ Tool '{tool_name}' requires user confirmation. "
-                f"Waiting for user input before proceeding."
-            )
+            if is_success:
+                return True, TerminationReason.USER_CONFIRMATION_REQUIRED, (
+                    f"⏸️ Tool '{tool_name}' requires user confirmation. "
+                    f"Waiting for user input before proceeding."
+                )
 
         # Check 3: Infinite loop detection
         if self.state.consecutive_same_tool_calls >= self.config.MAX_SAME_TOOL_CALLS:
@@ -141,6 +150,41 @@ class ControlLayer:
 
         if isinstance(result, dict):
             return result.get("status") == "success"
+
+        return False
+
+    def _is_error_result(self, result: Any) -> bool:
+        """Check if tool result indicates an error or unavailability"""
+        error_indicators = [
+            "不可用", "unavailable", "error", "failed", "失败",
+            "当前状态", "当前可用工具", "请使用", "not allowed"
+        ]
+        
+        if isinstance(result, str):
+            result_lower = result.lower()
+            # Check for error indicators
+            for indicator in error_indicators:
+                if indicator.lower() in result_lower:
+                    return True
+            
+            # Check for wrapped result format
+            try:
+                parsed = json.loads(result)
+                if isinstance(parsed, dict):
+                    status = parsed.get("status", "")
+                    message = parsed.get("message", "")
+                    # If status is success but message contains error indicators
+                    if status == "success":
+                        for indicator in error_indicators:
+                            if indicator.lower() in message.lower():
+                                return True
+                    return status in ["error", "failed", "unavailable"]
+            except json.JSONDecodeError:
+                pass
+
+        if isinstance(result, dict):
+            status = result.get("status", "")
+            return status in ["error", "failed", "unavailable"]
 
         return False
 

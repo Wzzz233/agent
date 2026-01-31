@@ -66,24 +66,19 @@ class ToolResult:
         Generate user-facing message (natural language only).
         This prevents JSON leakage.
         """
-        parts = [self.summary]
-
-        if self.instruction:
-            parts.append(f"\n\n{self.instruction}")
-
-        return "\n".join(parts)
+        # Only return summary - no internal instructions
+        return self.summary
 
     def to_model_message(self) -> str:
         """
-        Generate model-facing message with system instructions.
-        This can include directives for the model.
+        Generate model-facing message.
+        
+        For small/quantized models, we keep this simple to avoid
+        the model echoing internal instructions to the user.
         """
-        parts = [self.summary]
-
-        if self.instruction:
-            parts.append(f"\n\n{self.instruction}")
-
-        return "\n".join(parts)
+        # Just return the summary - keep it simple for small models
+        # The model should generate its own response based on this
+        return self.summary
 
 
 def wrap_tool_result(
@@ -295,24 +290,32 @@ def _wrap_check_cell_exists_result(
     context: Optional[Dict[str, Any]]
 ) -> ToolResult:
     """Wrap check_cell_exists result"""
+    
+    # Extract arguments from context
+    library_name = context.get("arguments", {}).get("library_name", "unknown") if context else "unknown"
+    cell_name = context.get("arguments", {}).get("cell_name", "unknown") if context else "unknown"
+    
     if isinstance(raw_result, dict):
+        # NEW FORMAT: Check for 'message' field from ads_server.py
+        message = raw_result.get("message", "")
+        
         # Check for nested error in data field
         if 'data' in raw_result and isinstance(raw_result['data'], dict):
             data = raw_result['data']
+            
             if data.get("status") == "error":
                 error_msg = data.get('error', 'Unknown error')
-                library_name = context.get("arguments", {}).get("library_name", "unknown") if context else "unknown"
 
                 # Parse library not open error
                 if "library" in error_msg.lower() and "not open" in error_msg.lower():
-                    summary = f"❌ Library '{library_name}' is not open or does not exist."
+                    summary = f"❌ 库 '{library_name}' 不存在或未打开！"
                     instruction = (
-                        f"⚠️ The library '{library_name}' is not available in the current ADS project.\n\n"
-                        f"IMPORTANT: Before calling any cell-related tools again, you MUST:\n"
-                        f"1. Call 'get_project_structure' to see all available libraries and cells\n"
-                        f"2. Choose an existing library from the project structure\n"
-                        f"3. OR use 'create_schematic' to create a new design in the default workspace\n\n"
-                        f"Do NOT repeatedly call check_cell_exists with the same non-existent library."
+                        f"⚠️ 您输入的库名 '{library_name}' 不正确。\n\n"
+                        f"**解决方法**：\n"
+                        f"1. 首先调用 `get_project_structure` 获取正确的项目库名\n"
+                        f"2. 项目库名类似 'MyLibrary3_lib'，不是 cell 名称！\n"
+                        f"3. 然后使用正确的库名重新调用 check_cell_exists\n\n"
+                        f"⛔ 不要再使用 '{library_name}' 作为库名。"
                     )
                     return ToolResult(
                         status=ToolStatus.ERROR,
@@ -322,43 +325,56 @@ def _wrap_check_cell_exists_result(
                     )
 
                 # Other errors
-                summary = f"❌ Error checking cell: {error_msg}"
+                summary = f"❌ 检查单元失败: {error_msg}"
                 return ToolResult(
                     status=ToolStatus.ERROR,
                     summary=summary,
                     raw_result=raw_result
                 )
+            
+            # Check for successful cell exists check
+            if data.get("exists") is not None:
+                exists = data.get("exists", False)
+                
+                if exists:
+                    summary = f"✅ 单元 '{cell_name}' 存在于库 '{library_name}' 中。"
+                    instruction = (
+                        f"单元已找到！\n"
+                        f"design_uri = `{library_name}:{cell_name}:schematic`\n\n"
+                        f"下一步：可以直接调用 add_component 添加元件到该设计。"
+                    )
+                else:
+                    summary = f"ℹ️ 单元 '{cell_name}' 在库 '{library_name}' 中不存在。"
+                    instruction = (
+                        f"单元不存在。\n\n"
+                        f"下一步：\n"
+                        f"1. 调用 `list_cells(library_name=\"{library_name}\")` 查看该库中的单元\n"
+                        f"2. 或调用 `plan_circuit` 创建新设计"
+                    )
 
-        # Check for cell exists result
-        if raw_result.get("status") == "success":
-            exists = raw_result.get("data", {}).get("exists", False)
-            cell_name = context.get("arguments", {}).get("cell_name", "") if context else ""
-            library_name = context.get("arguments", {}).get("library_name", "") if context else ""
-
-            if exists:
-                summary = f"✅ Cell '{cell_name}' exists in library '{library_name}'."
-            else:
-                summary = f"ℹ️ Cell '{cell_name}' does not exist in library '{library_name}'."
-                instruction = (
-                    f"Cell '{cell_name}' not found in '{library_name}'.\n\n"
-                    f"Next steps:\n"
-                    f"1. Call 'list_cells' to see all available cells in this library\n"
-                    f"2. OR call 'create_schematic' to create a new cell"
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    summary=summary,
+                    instruction=instruction,
+                    raw_result=raw_result
                 )
-
+        
+        # If we have a message but no structured data, use the message
+        if message:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                summary=summary,
-                instruction=instruction if not exists else None,
+                summary=message,
                 raw_result=raw_result
             )
 
-    # Fallback
+    # Fallback - should not reach here with proper format
     return ToolResult(
         status=ToolStatus.SUCCESS,
-        summary="Cell existence check completed.",
+        summary=f"检查了 '{cell_name}' 在 '{library_name}' 中的存在性。",
         raw_result=raw_result
     )
+
+
 
 
 def _wrap_get_project_structure_result(
@@ -420,7 +436,7 @@ def _wrap_get_current_design_result(
     raw_result: Any,
     context: Optional[Dict[str, Any]]
 ) -> ToolResult:
-    """Wrap get_current_design result - CRITICAL for workflow decision"""
+    """Wrap get_current_design result"""
     if isinstance(raw_result, dict):
         # Check for error
         if 'data' in raw_result and isinstance(raw_result['data'], dict):
@@ -429,7 +445,7 @@ def _wrap_get_current_design_result(
                 error_msg = data.get('error', 'Unknown error')
                 return ToolResult(
                     status=ToolStatus.ERROR,
-                    summary=f"❌ Failed to get current design: {error_msg}",
+                    summary=f"无法获取当前设计信息: {error_msg}",
                     raw_result=raw_result
                 )
 
@@ -439,49 +455,23 @@ def _wrap_get_current_design_result(
         library_name = raw_result.get("data", {}).get("library_name")
 
         if design_uri and design_uri != "None":
-            # SCENARIO 2: User has a design open
-            summary = f"✅ User has a schematic open: {design_uri}"
-            instruction = (
-                f"WORKFLOW DECISION: User already has '{library_name}:{cell_name}' open in ADS.\n\n"
-                f"IMPORTANT:\n"
-                f"✓ DO NOT call plan_circuit or execute_circuit_plan\n"
-                f"✓ DO NOT create a new cell\n"
-                f"✓ Design the circuit directly using the user's open schematic\n"
-                f"✓ Ask user for design requirements (circuit type, parameters, etc.)\n"
-                f"✓ Then call add_component or other design tools directly\n\n"
-                f"This is SCENARIO 2: User has existing schematic - design directly."
-            )
+            # Design is open - simple message
+            summary = f"当前打开的设计: {library_name}:{cell_name}"
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 summary=summary,
-                instruction=instruction,
                 data={"scenario": "existing_design", "design_uri": design_uri},
                 raw_result=raw_result
             )
         else:
-            # SCENARIO 1: No design is open
-            summary = "ℹ️ No schematic is currently open in ADS."
-            instruction = (
-                f"WORKFLOW DECISION: No design is open in ADS.\n\n"
-                f"IMPORTANT - Ask user to clarify:\n"
-                f"1. Do you want to CREATE a new cell/schematic?\n"
-                f"   → If yes: Call plan_circuit to generate design plan\n"
-                f"   → Then call execute_circuit_plan to create schematic\n"
-                f"   → Wait for user to open it in ADS\n"
-                f"   → Then add components\n\n"
-                f"2. Do you have an EXISTING cell/schematic you want to use?\n"
-                f"   → If yes: Ask user for library and cell names\n"
-                f"   → Call get_project_structure to see available cells\n"
-                f"   → User should open the schematic in ADS first\n"
-                f"   → Then design and add components\n\n"
-                f"This is SCENARIO 1: Need to create or open a schematic first."
-            )
+            # No design open - simple message
+            summary = "当前没有打开的设计。需要先创建或打开一个原理图。"
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 summary=summary,
-                instruction=instruction,
                 data={"scenario": "no_design"},
                 raw_result=raw_result
+
             )
 
     # Fallback

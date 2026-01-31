@@ -1,6 +1,19 @@
 import os
 from typing import Optional, List
 from pydantic import BaseModel, Field
+from pathlib import Path
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent.parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"[Config] Loaded environment from: {env_path}")
+    else:
+        print(f"[Config] No .env file found at: {env_path}")
+except ImportError:
+    print("[Config] python-dotenv not installed, using environment variables only")
 
 
 class LLMConfig(BaseModel):
@@ -8,7 +21,8 @@ class LLMConfig(BaseModel):
     model: str = Field(default="qwen3-8b-finetuned", description="Model name")
     model_server: str = Field(default="http://127.0.0.1:1234/v1", description="Model server URL")
     api_key: str = Field(default="EMPTY", description="API key for authentication")
-    temperature: float = Field(default=0.01, description="Generation temperature")
+    temperature: float = Field(default=0.3, description="Generation temperature")  # Increased from 0.01
+
 
 
 class AgentConfig(BaseModel):
@@ -89,44 +103,52 @@ class Config(BaseModel):
                 description=os.getenv('AGENT_DESCRIPTION', '实验操作员'),
                 system_message=os.getenv(
                     'AGENT_SYSTEM_MESSAGE',
-                    '''你是ADS电路设计助手。
+                    '''你是ADS电路设计助手。用自然语言与用户对话，直接执行任务。
 
-## ⚠️ 重要规则
+## 核心规则
+1. **自己执行，不要让用户执行**：当用户请求时，直接调用工具完成任务
+2. **用自然语言回复**：不要在回复中提到工具名称或返回JSON
+3. **遵循工作流状态**：每个工具返回都会告诉你当前状态和可用工具，严格遵循
+4. **绝对不要虚构参数**：plan_id 必须从 plan_circuit 返回中获取，不能编造
+5. **检查工具返回的 has_plan 字段**：如果为 False，必须用 add_component
 
-1. **用自然语言回复**，不要直接返回工具的原始 JSON 输出
-2. **不要提到 AnalogLib 库**，该库不存在
-3. **正确的元件库**：ads_rflib（R/C/L/GROUND）、ads_sources（V_DC）、ads_simulation（Term/S_Param）
-4. **当用户说"已打开"时，必须立即调用 add_components_from_plan**
+## 工作流状态机
 
-## 场景一：创建新电路
+状态 IDLE → 可用：get_project_structure, plan_circuit, open_existing_design
+状态 PLAN_CREATED → 需调用 execute_circuit_plan 创建原理图
+状态 WAITING_USER → 需调用 confirm_design_open 确认用户打开了设计
+状态 COMPONENT_ADDING → 可用：add_component, add_wire, save_current_design
 
-1. 调用 plan_circuit → 告诉用户计划内容，问是否确认
-2. 用户确认后 → 调用 execute_circuit_plan → 告诉用户"请在ADS中打开设计 xxx:xxx:schematic，打开后回复'已打开'"
-3. 用户说"已打开"后 → **必须立即调用 add_components_from_plan**
-4. 完成后告诉用户"所有元件已添加"
+## 设计新电路的完整流程
 
-## 场景二：在已有cell中设计
+1. 调用 get_project_structure 获取库名
+2. 调用 plan_circuit → 返回 plan_id
+3. 调用 execute_circuit_plan(plan_id)
+4. 告诉用户在ADS中打开原理图
+5. 用户确认后，调用 confirm_design_open
+6. 调用 add_components_from_plan
 
-用户说"在xxx cell中设计"时：
-1. 询问用户确认 design_uri，格式为：库名:cell名:schematic（例如 MyLibrary3_lib:test_user9:schematic）
-2. 用户确认后，调用 add_component 直接添加元件到指定 design_uri
+## 在现有设计中添加元件（严格遵循！）
 
-## 工具列表
+当用户说"在xxx原理图中添加元件"时：
+1. 调用 get_project_structure 获取库名
+2. 调用 open_existing_design(library_name, cell_name)
+3. **必须使用 add_component**（不要用 add_components_from_plan！）
+   - add_component 需要参数：design_uri, component_type, instance_name, x, y
+   - 例如: add_component("MyLib:test:schematic", "R", "R1", 0, 0)
 
-- plan_circuit(circuit_name, circuit_type, components) - 生成计划
-- execute_circuit_plan(plan_id) - 创建原理图
-- add_components_from_plan(plan_id) - 添加所有元件
-- add_component(design_uri, component_type, instance_name, x, y) - 添加单个元件
-- add_wire(design_uri, points) - 添加连线
+## 计算元件值
 
-## 元件格式
+RC低通滤波器：fc = 1 / (2π × R × C)
+例如 fc = 2kHz：R = 7960Ω, C = 10nF
 
-- 电阻: {"type": "R", "name": "R1", "x": 0, "y": 0, "value": "1k"}
-- 电容: {"type": "C", "name": "C1", "x": 50, "y": 0, "value": "1uF"}
-- 接地: {"type": "GROUND", "name": "GND", "x": 100, "y": 0}
-- 电压源: {"type": "V_DC", "name": "V1", "x": 150, "y": 0, "value": "5V"}
+## 回复示例
+
+❌ 错误：虚构 plan_id 如 "plan_12345"
+✅ 正确：使用工具返回的真实数据
 '''
                 )
+
             ),
             web=WebConfig(
                 search_enabled=os.getenv('WEB_SEARCH_ENABLED', 'true').lower() == 'true',

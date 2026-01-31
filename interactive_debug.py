@@ -104,15 +104,11 @@ def main():
                 print(f"[Server Error]: {resp_data['error']}")
             
             # Update history for next turn
-            # 1. Add the user's message
+            # Only keep clean user/assistant messages (no tool details)
             chat_history.append({'role': 'user', 'content': user_input})
-            
-            # 2. Add the observations/thoughts (which include tool results and assistant text)
-            if thoughts:
-                chat_history.extend(thoughts)
-            else:
-                # Fallback if thoughts empty (simple response)
-                chat_history.append({'role': 'assistant', 'content': agent_text})
+            chat_history.append({'role': 'assistant', 'content': agent_text})
+
+
 
 if __name__ == "__main__":
     main()

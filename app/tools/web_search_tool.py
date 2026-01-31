@@ -1,29 +1,39 @@
+"""
+Web Search Tool - DuckDuckGo search implementation
+
+Searches the internet using DuckDuckGo and returns formatted results.
+"""
 import json
-from qwen_agent.tools.base import BaseTool
-from typing import Dict, Any
+from typing import Dict, Any, Union
+from app.tools.base_tool import BaseTool
 from app.config.settings import config
 
 
 class WebSearchTool(BaseTool):
-    """Tool for searching information on the internet using DuckDuckGo"""
+    """Tool for searching information on the internet using DuckDuckGo."""
 
     name = "web_search"
     description = "Search information on the internet using DuckDuckGo. Use English keywords for better results. Returns search results with titles, URLs, and snippets."
-    parameters = [{
-        "name": "query",
-        "type": "string",
-        "description": "Search keywords in ENGLISH (e.g., 'terahertz spectroscopy advances 2024')",
-        "required": True
-    }]
+    
+    # OpenAI JSON Schema format
+    parameters = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search keywords in ENGLISH (e.g., 'terahertz spectroscopy advances 2024')"
+            }
+        },
+        "required": ["query"]
+    }
 
     def __init__(self):
-        """Initialize the web search tool"""
-        super().__init__()
+        """Initialize the web search tool."""
         self._ddgs_available = False
         self._import_ddgs()
 
     def _import_ddgs(self):
-        """Import the DDGS library"""
+        """Import the DDGS library."""
         try:
             from ddgs import DDGS
             self.DDGS = DDGS
@@ -36,8 +46,8 @@ class WebSearchTool(BaseTool):
             except ImportError:
                 self._ddgs_available = False
 
-    def call(self, params: str, **kwargs) -> str:
-        """Execute the web search"""
+    def call(self, params: Union[str, Dict[str, Any]], **kwargs) -> str:
+        """Execute the web search."""
         if not self._ddgs_available:
             return (
                 "[ERROR] ddgs package is not installed. "
@@ -45,9 +55,9 @@ class WebSearchTool(BaseTool):
             )
 
         try:
-            args = json.loads(params)
-        except json.JSONDecodeError:
-            return "[ERROR] Invalid JSON format in parameters."
+            args = self.parse_params(params)
+        except ValueError as e:
+            return f"[ERROR] {str(e)}"
 
         query = args.get('query', '').strip()
         if not query:
@@ -72,7 +82,8 @@ class WebSearchTool(BaseTool):
             for i, r in enumerate(results, 1):
                 result_parts.append(f"\n{i}. {r.get('title', 'No title')}")
                 result_parts.append(f"   URL: {r.get('href', 'No URL')}")
-                result_parts.append(f"   {r.get('body', 'No description')[:200]}...")
+                body = r.get('body', 'No description')
+                result_parts.append(f"   {body[:200]}..." if len(body) > 200 else f"   {body}")
 
             result_parts.append("\n" + "=" * 60)
             result_parts.append("[NOTE] Please use the above information to answer the user's question.")

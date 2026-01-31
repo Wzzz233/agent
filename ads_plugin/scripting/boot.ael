@@ -1,0 +1,41 @@
+// boot.ael - ADS Startup Bootstrap Script
+// Purpose: Automatically load the Python automation server when ADS opens this workspace.
+// 
+// IMPORTANT: You must edit the SCRIPT_PATH below to match your actual workspace location!
+//
+
+fputs(stderr, "ADS Automation: Initializing Python server...\n");
+
+// ============================================================================
+// CONFIGURATION - Edit this path to match your ADS workspace scripting folder
+// ============================================================================
+// Option 1: Hardcoded path (replace with your actual path)
+// decl script_dir = "C:/Users/Wzzz2/OneDrive/Desktop/agent/ads_plugin/scripting";
+
+// Option 2: Use Python to auto-detect (more portable)
+// This approach uses a multi-line Python script that discovers its own location
+python_execute("
+import sys
+import os
+
+# Method 1: Try to find boot.py in common locations
+_search_paths = [
+    r'C:/Users/Wzzz2/OneDrive/Desktop/agent/ads_plugin/scripting',  # Primary location
+    os.path.join(os.getcwd(), 'scripting'),
+    os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else None,
+]
+
+for _path in _search_paths:
+    if _path and os.path.exists(os.path.join(_path, 'boot.py')):
+        if _path not in sys.path:
+            sys.path.insert(0, _path)
+        print(f'ADS Automation: Using script path: {_path}')
+        break
+else:
+    print('ADS Automation: WARNING - Could not auto-detect script path!')
+");
+
+// Import and start the server
+python_execute("import boot; boot.start_server()");
+
+fputs(stderr, "ADS Automation: Server initialization complete.\n");

@@ -12,7 +12,8 @@
       "Bash(dir:*)",
       "Bash(tree:*)",
       "Bash(ls:*)",
-      "Read(//c/Users/Wzzz2/OneDrive/Desktop/agent/**)"
+      "Read(//c/Users/Wzzz2/OneDrive/Desktop/agent/**)",
+      "Bash(git commit:*)"
     ]
   }
 }
