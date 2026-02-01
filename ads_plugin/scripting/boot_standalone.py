@@ -16,6 +16,7 @@ import json
 import sys
 import os
 import traceback
+import circuit_templates
 from typing import Optional, Any, Dict
 
 # ==============================================================================
@@ -186,6 +187,7 @@ class CommandHandler:
             y = float(params.get("y", 0.0))
             angle = params.get("angle")
             name = params.get("name")
+            instance_params = params.get("parameters", {})
             
             # Build component reference string (this format worked in testing)
             component_ref = f"{lib}:{cell}:{view}"
@@ -199,6 +201,21 @@ class CommandHandler:
                 kwargs['angle'] = float(angle)
             
             instance = design.add_instance(component_ref, position, **kwargs)
+            
+            # Set additional parameters if provided
+            if instance and instance_params:
+                print(f"[add_instance] Setting parameters: {instance_params}")
+                for key, val in instance_params.items():
+                    try:
+                        # Try standard dictionary-like access first
+                        instance.parameters[key] = str(val)
+                    except Exception:
+                        try:
+                            # Fallback to set_parameter if available
+                            if hasattr(instance, 'set_parameter'):
+                                instance.set_parameter(key, str(val))
+                        except Exception as pe:
+                            print(f"[add_instance] Failed to set param {key}={val}: {pe}")
             
             # Debug: print instance count
             print(f"[add_instance] Added {instance}, total instances: {len(design.instances)}")
@@ -349,6 +366,32 @@ class CommandHandler:
         }
 
 
+    @staticmethod
+    def build_template(params: Dict) -> Dict:
+        """Execute a predefined circuit template."""
+        template_type = params.get("template_type")
+        design_uri = params.get("design_uri")
+        args = params.get("args", {})
+        
+        if not design_uri:
+            return {"status": "error", "message": "design_uri is required"}
+            
+        try:
+            if template_type == "tline_test":
+                w = float(args.get("w", 1.0))
+                l = float(args.get("l", 10.0))
+                er = float(args.get("er", 4.4))
+                h = float(args.get("h", 1.6))
+                
+                result = circuit_templates.create_tline_test_circuit(
+                    design_uri, w, l, er, h
+                )
+                return result
+            else:
+                return {"status": "error", "message": f"Unknown template type: {template_type}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
+
 # Action dispatch table
 ACTIONS = {
     "ping": CommandHandler.ping,
@@ -362,6 +405,7 @@ ACTIONS = {
     "add_instance": CommandHandler.add_instance,
     "add_wire": CommandHandler.add_wire,
     "save_design": CommandHandler.save_design,
+    "build_template": CommandHandler.build_template,
 }
 
 
